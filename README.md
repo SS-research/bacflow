@@ -1,6 +1,6 @@
 # BACflow
 
-A machine learning framework for blood alcohol content (BAC) estimation.
+machine learning framework for blood alcohol content (BAC) estimation.
 
 <img src="assets/logo.png" width="500" height="500" />
 
