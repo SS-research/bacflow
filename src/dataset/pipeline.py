@@ -20,15 +20,19 @@ def normalize_and_remove_outliers(data):
     return normalized_data[(normalized_data > lower_bound) & (normalized_data < upper_bound)]
 
 
-def segment_data(data, window_size_seconds=5, sampling_rate=50):
+def segment_data(data, window_size_seconds=5):
     """
-    Segment data into fixed-size windows.
+    Segment data into fixed-size windows using the 'timestamp' field to group data.
+    This function calculates the time delta since the first timestamp and divides it into fixed-sized windows.
     """
-    num_samples_per_window = window_size_seconds * sampling_rate
-    num_total_samples = data.shape[0]
-    num_windows = num_total_samples // num_samples_per_window
-    window_ids = np.repeat(np.arange(num_windows), num_samples_per_window)
-    data['window_id'] = window_ids[:num_total_samples]
+    # Ensure 'timestamp' is a datetime object
+    data['timestamp'] = pd.to_datetime(data['timestamp'], errors='coerce')
+    
+    # Calculate windows based on the time difference in seconds from the start
+    start_time = data['timestamp'].min()
+    data['seconds_since_start'] = (data['timestamp'] - start_time).dt.total_seconds()
+    data['window_id'] = (data['seconds_since_start'] // window_size_seconds).astype(int)
+    
     return data
 
 
