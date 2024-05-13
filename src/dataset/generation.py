@@ -14,6 +14,35 @@ _labelspace = {
 }
 
 
+def generate_coherent_demographic_features(num_entries):
+    """
+    Generate more coherent demographic features (height, weight, gender) for synthetic data generation
+    with gender-specific variations for heights.
+    """
+    genders = np.random.choice(['Male', 'Female', 'Other'], num_entries)
+    heights = np.zeros(num_entries).astype(int)
+    
+    for i in range(num_entries):
+        if genders[i] == 'Male':
+            heights[i] = int(np.random.normal(175, 7))
+        elif genders[i] == 'Female':
+            heights[i] = int(np.random.normal(163, 7))
+        else:
+            heights[i] = int(np.random.normal(169, 7))
+    
+    weights = []
+    for i in range(num_entries):
+        base_weight = 50 + (heights[i] - 150) * 0.5  # Basic weight increases linearly with height.
+        if genders[i] == 'Male':
+            weights.append(int(np.random.normal(base_weight + 10, 10)))
+        elif genders[i] == 'Female':
+            weights.append(int(np.random.normal(base_weight, 10)))
+        else:
+            weights.append(int(np.random.normal(base_weight + 5, 10)))
+
+    return heights, weights, genders
+
+
 def generate_synthetic_trajectory_with_devices(participant_key: str, trajectory_key: int, duration_seconds: int, label: str, frequency: int = 50):
     """
     Generates a synthetic dataset resembling sensor data from both a smartphone and a smartwatch during a walking trajectory.
