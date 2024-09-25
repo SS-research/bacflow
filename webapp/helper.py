@@ -1,8 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.figure import Figure
-
 
 def calc_widmark_factor(height, weight, sex):
     r_female = 0.31223 - 0.006446 * weight + 0.4466 * height
@@ -17,7 +14,7 @@ def calc_widmark_factor(height, weight, sex):
     else:
         return (r_male + r_female) / 2
 
-def cumalative_absorption(drinks, absorption_halflife, start_time, end_time):
+def cumulative_absorption(drinks, absorption_halflife, start_time, end_time):
     t_sec = np.arange(start_time, end_time, 60)
     absorption_mat = np.zeros((len(drinks), len(t_sec)))
 
@@ -27,16 +24,20 @@ def cumalative_absorption(drinks, absorption_halflife, start_time, end_time):
     absorption_mat[absorption_mat < 0] = 0
     kg_absorbed = absorption_mat.sum(axis=0)
 
-    return pd.DataFrame({'kg_absorbed': kg_absorbed, 'time': t_sec})
+    df = pd.DataFrame({'kg_absorbed': kg_absorbed, 'time': t_sec})
+    df['time'] = pd.to_datetime(df['time'], unit='s')
 
-def calc_bac_ts(drinks, height, weight, sex, absorption_halflife, beta, start_time, end_time) -> pd.DataFrame:
-    if not drinks: return pd.DataFrame()
+    return df
+
+def calc_bac_ts(drinks, height, weight, sex, absorption_halflife, beta, start_time, end_time):
+    if not drinks:
+        return pd.DataFrame()
     for drink in drinks:
         drink['alc_vol'] = drink['vol'] * drink['alc_prop']
         drink['alc_kg'] = drink['alc_vol'] * 0.789
 
     r = calc_widmark_factor(height, weight, sex)
-    bac_ts = cumalative_absorption(drinks, absorption_halflife, start_time, end_time)
+    bac_ts = cumulative_absorption(drinks, absorption_halflife, start_time, end_time)
 
     bac_ts['bac_excluding_elimination'] = bac_ts['kg_absorbed'] / (r * weight)
     bac_ts['eliminated'] = 0.0 
@@ -48,21 +49,4 @@ def calc_bac_ts(drinks, height, weight, sex, absorption_halflife, beta, start_ti
     bac_ts['bac'] = bac_ts['bac_excluding_elimination'] - bac_ts['eliminated']
     bac_ts['bac_perc'] = bac_ts['bac'] * 100
 
-    try:
-        ts_end_i = max(bac_ts[bac_ts['bac'] > 0].index[-1], 5 * 60)
-    except IndexError:
-        ts_end_i = 0
-
-    return bac_ts.iloc[:ts_end_i+1]
-
-def plot_bac_ts(bac_ts, drink_info) -> Figure:
-    figure = plt.figure(figsize=(10, 5))
-    plt.plot(bac_ts['time'] / 3600, bac_ts['bac_perc'], color='skyblue', linewidth=2, label="BAC")
-    plt.fill_between(bac_ts['time'] / 3600, bac_ts['bac_perc'], color='skyblue', alpha=0.3)
-    
-    plt.xlabel('Time (hours)')
-    plt.ylabel('BAC (%)')
-    plt.title('Blood Alcohol Concentration Over Time')
-    plt.grid(True)
-
-    return figure
+    return bac_ts
