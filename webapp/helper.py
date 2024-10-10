@@ -1,9 +1,16 @@
 import numpy as np
 import pandas as pd
+from datetime import datetime
 
-def calc_widmark_factor(height, weight, sex):
-    r_female = 0.31223 - 0.006446 * weight + 0.4466 * height
-    r_male = 0.31608 - 0.004821 * weight + 0.4632 * height
+from schemas import Drink
+
+def calc_body_factor(height: int, weight: int, sex: str, model: str="seidl"):
+    if model == "seidl":
+        r_female = 0.31223 - 0.006446 * weight + 0.4466 * height
+        r_male = 0.31608 - 0.004821 * weight + 0.4632 * height
+    else:
+        raise ValueError(f"Model '{model}' is not supported")
+
     r_female = np.clip(r_female, 0.44, 0.8)
     r_male = np.clip(r_male, 0.60, 0.87)
 
@@ -14,29 +21,35 @@ def calc_widmark_factor(height, weight, sex):
     else:
         return (r_male + r_female) / 2
 
-def cumulative_absorption(drinks, absorption_halflife, start_time, end_time):
-    t_sec = np.arange(start_time, end_time, 60)
+def cumulative_absorption(drinks: list[Drink], absorption_halflife: int, start_time: datetime, end_time: datetime) -> pd.DataFrame:
+    t_sec = np.arange(start_time.timestamp(), end_time.timestamp(), 60)
     absorption_mat = np.zeros((len(drinks), len(t_sec)))
 
     for i, drink in enumerate(drinks):
-        absorption_mat[i, :] = drink['alc_kg'] * (1 - np.exp(-(t_sec - drink['time']) * np.log(2) / absorption_halflife))
+        absorption_mat[i, :] = drink.alc_kg * (1 - np.exp(-(t_sec - drink.time.timestamp()) * np.log(2) / absorption_halflife))
 
     absorption_mat[absorption_mat < 0] = 0
     kg_absorbed = absorption_mat.sum(axis=0)
 
     df = pd.DataFrame({'kg_absorbed': kg_absorbed, 'time': t_sec})
-    df['time'] = pd.to_datetime(df['time'], unit='s')
-
+    df['time'] = pd.to_datetime(df['time'], unit='s', utc=True).dt.tz_convert(start_time.tzinfo)
     return df
 
-def calc_bac_ts(drinks, height, weight, sex, absorption_halflife, beta, start_time, end_time):
+def calc_bac_ts(
+    drinks: list[Drink], 
+    height: float, 
+    weight: float, 
+    sex: str, 
+    absorption_halflife: float, 
+    beta: float, 
+    start_time: datetime, 
+    end_time: datetime, 
+    model: str = "seidl"
+) -> pd.DataFrame:
     if not drinks:
         return pd.DataFrame()
-    for drink in drinks:
-        drink['alc_vol'] = drink['vol'] * drink['alc_prop']
-        drink['alc_kg'] = drink['alc_vol'] * 0.789
 
-    r = calc_widmark_factor(height, weight, sex)
+    r = calc_body_factor(height, weight, sex, model)
     bac_ts = cumulative_absorption(drinks, absorption_halflife, start_time, end_time)
 
     bac_ts['bac_excluding_elimination'] = bac_ts['kg_absorbed'] / (r * weight)
