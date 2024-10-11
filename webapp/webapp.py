@@ -1,6 +1,7 @@
 from bisect import insort
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from helper import calc_bac_ts
 from schemas import Drink
@@ -13,10 +14,17 @@ st.title("pydrink: Estimate your Blood Alcohol Concentration (BAC)")
 
 st.sidebar.header("Enter your information")
 sex = st.sidebar.selectbox("Sex", ["Male", "Female"])
+age = st.sidebar.slider("Age", 18, 100, 18)
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
 absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) * 60
 beta = st.sidebar.slider("Alcohol elimination (%/h)", 0.009, 0.035, 0.018) / 100 / 3600
+simulation = st.sidebar.multiselect(
+    "What model would you like to simulate?",
+    ["widmark", "watson", "forrest", "seidl", "ulrich", "average"],
+    default=["seidl"],
+    format_func=lambda model: model if model == "average" else model.capitalize()
+)
 
 st.sidebar.header("Add a drink")
 drink_type = st.sidebar.selectbox("Drink type", drink_info['drink'])
@@ -45,18 +53,37 @@ if add_drink:
 # Display added drinks
 st.header("Drunken drinks")
 for drink in st.session_state.drinks:
-    st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%H:%M')}")
+    st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%Y-%m-%d %H:%M')}")
 
 # Calculate BAC
 if st.session_state.drinks:
-    start_time = min(drink.time for drink in st.session_state.drinks)
-    end_time = max(drink.time for drink in st.session_state.drinks) + timedelta(seconds=60 * 60 * 24)
+    if not simulation:
+        st.error("select one or more models to see a simulation")
+    else:
+        start_time = min(drink.time for drink in st.session_state.drinks)
+        end_time = max(drink.time for drink in st.session_state.drinks) + timedelta(seconds=60 * 60 * 24)
 
-    bac_ts = calc_bac_ts(st.session_state.drinks, height / 100, weight, sex, absorption_halflife, beta, start_time, end_time)
+        results = calc_bac_ts(st.session_state.drinks, age, height / 100, weight, sex, absorption_halflife, beta, start_time, end_time, simulation)
 
-    st.header("BAC over time")
-    st.write("N.B. - The BAC percentage is equivalent to g/dL.")
-    st.line_chart(bac_ts.set_index('time')['bac_perc'], x_label="time", y_label="BAC (%)")
+        st.header("BAC over time")
+        st.write("N.B. - The BAC percentage is equivalent to g/dL.")
+
+        fig = go.Figure()
+
+        for model, bac_ts in results.items():
+            fig.add_trace(go.Scatter(
+                x=bac_ts['time'],
+                y=bac_ts['bac_perc'],
+                mode='lines',
+                name=model if model == "average" else model.capitalize()
+            ))
+
+        fig.update_layout(
+            xaxis_title='time',
+            yaxis_title='BAC (%)'
+        )
+
+        st.plotly_chart(fig)
 else:
     st.write("No drinks added yet.")
 
