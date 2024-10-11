@@ -12,7 +12,7 @@ drink_info = pd.read_csv("dataset.csv")
 st.title("pydrink: Estimate your Blood Alcohol Concentration (BAC)")
 
 st.sidebar.header("Enter your information")
-sex = st.sidebar.selectbox("Sex", ["Unknown", "Male", "Female"])
+sex = st.sidebar.selectbox("Sex", ["Male", "Female"])
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
 absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) * 60

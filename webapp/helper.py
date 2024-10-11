@@ -19,7 +19,7 @@ def calc_body_factor(height: int, weight: int, sex: str, model: str="seidl"):
     elif sex == "Male":
         return r_male
     else:
-        return (r_male + r_female) / 2
+        raise ValueError(f"unknown sex — {sex}")
 
 def cumulative_absorption(drinks: list[Drink], absorption_halflife: int, start_time: datetime, end_time: datetime) -> pd.DataFrame:
     t_sec = np.arange(start_time.timestamp(), end_time.timestamp(), 60)
