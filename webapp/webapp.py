@@ -49,11 +49,16 @@ if add_drink:
     except ValueError:
         st.sidebar.error("Incorrect time format. Please use YYYY-MM-DD HH:MM.")    
 
-
-# Display added drinks
+# Display added drinks with delete option
 st.header("Drunken drinks")
-for drink in st.session_state.drinks:
-    st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%Y-%m-%d %H:%M')}")
+for i, drink in enumerate(st.session_state.drinks):
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%Y-%m-%d %H:%M')}")
+    with col2:
+        if st.button("🗑️", key=f"delete_drink_{i}"):
+            st.session_state.drinks.pop(i)
+            st.rerun()
 
 # Calculate BAC
 if st.session_state.drinks:
