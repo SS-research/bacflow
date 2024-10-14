@@ -2,7 +2,7 @@ from bisect import insort
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 from helper import calc_bac_ts
 from schemas import Drink
 
@@ -18,7 +18,7 @@ age = st.sidebar.slider("Age", 18, 100, 18)
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
 absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) * 60
-beta = st.sidebar.slider("Alcohol elimination (%/h)", 0.009, 0.035, 0.018) / 100 / 3600
+beta = st.sidebar.slider("Alcohol elimination (%/h)", 0.009, 0.035, 0.018, 0.001) / 100 / 3600
 simulation = st.sidebar.multiselect(
     "What model would you like to simulate?",
     ["widmark", "watson", "forrest", "seidl", "ulrich", "average"],
@@ -31,6 +31,7 @@ drink_type = st.sidebar.selectbox("Drink type", drink_info['drink'])
 volume = st.sidebar.slider("Volume (cl)", 1, 120, int(drink_info[drink_info['drink'] == drink_type]['volume'].iloc[0]))
 alc_perc = st.sidebar.slider("Percent alcohol", 0, 100, int(drink_info[drink_info['drink'] == drink_type]['alc_prop'].iloc[0] * 100))
 drink_time_str = st.sidebar.text_input("Time of consumption (YYYY-MM-DD HH:MM)", placeholder=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M"))
+interval_duration = st.sidebar.slider("Interval duration (minutes)", 1, 60, 1)
 add_drink = st.sidebar.button("Add drink")
 
 # Initialize session state for drinks
@@ -45,7 +46,7 @@ if add_drink:
         else:
             drink_time = datetime.now().astimezone()
 
-        insort(st.session_state.drinks, Drink(name=drink_type, vol=volume / 100, alc_prop=alc_perc / 100, time=drink_time), key=lambda x: x.time)
+        insort(st.session_state.drinks, Drink(name=drink_type, vol=volume / 100, alc_prop=alc_perc / 100, time=drink_time, sip_interval=interval_duration), key=lambda x: x.time)
     except ValueError:
         st.sidebar.error("Incorrect time format. Please use YYYY-MM-DD HH:MM.")    
 
@@ -54,7 +55,7 @@ st.header("Drunken drinks")
 for i, drink in enumerate(st.session_state.drinks):
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%Y-%m-%d %H:%M')}")
+        st.write(f"{drink.name} - {drink.vol*100} cl, {drink.alc_prop*100}% at {drink.time.strftime('%Y-%m-%d %H:%M')} in {drink.sip_interval} minutes")
     with col2:
         if st.button("🗑️", key=f"delete_drink_{i}"):
             st.session_state.drinks.pop(i)
@@ -65,10 +66,7 @@ if st.session_state.drinks:
     if not simulation:
         st.error("select one or more models to see a simulation")
     else:
-        start_time = min(drink.time for drink in st.session_state.drinks)
-        end_time = max(drink.time for drink in st.session_state.drinks) + timedelta(seconds=60 * 60 * 24)
-
-        results = calc_bac_ts(st.session_state.drinks, age, height / 100, weight, sex, absorption_halflife, beta, start_time, end_time, simulation)
+        results = calc_bac_ts(st.session_state.drinks, age, height / 100, weight, sex, absorption_halflife, beta, simulation)
 
         st.header("BAC over time")
         st.write("N.B. - The BAC percentage is equivalent to g/dL.")
