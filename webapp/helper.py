@@ -4,6 +4,11 @@ from datetime import datetime, timedelta
 
 from schemas import Drink
 
+
+simulation_male = ["forrest", "seidl", "widmark", "ulrich", "watson", "average"]
+simulation_female = ["forrest", "seidl", "widmark", "watson", "average"]
+
+
 def calc_body_factor(age: int, height: int, weight: int, sex: str, model: str):
     """volume distribution of alcohol (VDA) in the body"""
     match model:

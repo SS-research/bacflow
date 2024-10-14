@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from helper import calc_bac_ts
+from helper import calc_bac_ts, simulation_female, simulation_male
 from schemas import Drink
 
 # Load drink information
@@ -21,7 +21,7 @@ absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) 
 beta = st.sidebar.slider("Alcohol elimination (%/h)", 0.009, 0.035, 0.018, 0.001) / 100 / 3600
 simulation = st.sidebar.multiselect(
     "What model would you like to simulate?",
-    ["widmark", "watson", "forrest", "seidl", "ulrich", "average"],
+    simulation_male if sex == "Male" else simulation_female,
     default=["seidl"],
     format_func=lambda model: model if model == "average" else model.capitalize()
 )
