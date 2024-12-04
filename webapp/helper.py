@@ -55,6 +55,24 @@ def calc_body_factor(age: int, height: int, weight: int, sex: str, model: str):
         return r_male
     else:
         raise ValueError(f"unknown sex — {sex}")
+    
+
+def calc_aer(sex: str, bac: float) -> float:
+    """alcohol elimination rate (AER) [1]_
+
+    References:
+    .. [1] M. Simic, and M. Tasic, 2007, 
+       https://pubmed.ncbi.nlm.nih.gov/17196778
+    """
+    if sex == 'Female':
+        aer = 0.16 + (bac * 0.05)
+    elif sex == 'Male':
+        aer = 0.14 + (bac * 0.05)
+
+    aer = np.clip(aer, 0.009, 0.035)
+
+    return aer
+
 
 def cumulative_absorption(drinks: list[Drink], absorption_halflife: int, start_time: datetime, end_time: datetime) -> pd.DataFrame:
     t_sec = np.arange(start_time.timestamp(), end_time.timestamp(), 60)
@@ -125,6 +143,7 @@ def calculate_bac_for_model(
 
     for i in range(1, len(model_bac_ts)):
         current_bac = model_bac_ts.at[i, 'bac_excluding_elimination'] - model_bac_ts.at[i-1, 'eliminated']
+        print(model, current_bac, beta * 60, beta, calc_aer(sex, current_bac))
         model_bac_ts.at[i, 'eliminated'] = model_bac_ts.at[i-1, 'eliminated'] + min(current_bac, beta * 60)
 
     model_bac_ts['bac'] = model_bac_ts['bac_excluding_elimination'] - model_bac_ts['eliminated']
