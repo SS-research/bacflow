@@ -1,12 +1,13 @@
-import pandas as pd
 import numpy as np
-from scipy.stats import kurtosis, skew
+import pandas as pd
+from scipy import signal
 from scipy.signal import find_peaks, periodogram, welch
+from scipy.stats import kurtosis, skew, chi2
 
 
 def load_and_preprocess_data(dataframe, fill_method='ffill'):
     """
-    Initial data loading and preprocessing, including handling missing values.
+    Load and preprocess the raw sensor data.
     """
     dataframe.fillna(method=fill_method, inplace=True)
     return dataframe
@@ -14,62 +15,70 @@ def load_and_preprocess_data(dataframe, fill_method='ffill'):
 
 def normalize_and_remove_outliers(data):
     """
-    Normalize sensor data using Z-score and remove outliers.
+    Normalize sensor data using Z-score and remove the top and bottom 1% of values.
     """
     normalized_data = (data - data.mean()) / data.std()
     lower_bound = normalized_data.quantile(0.01)
     upper_bound = normalized_data.quantile(0.99)
-    return normalized_data[(normalized_data > lower_bound) & (normalized_data < upper_bound)]
+    filtered = normalized_data.where((normalized_data > lower_bound) & (normalized_data < upper_bound))
+    return filtered.dropna()
 
 
 def segment_data(data, window_size_seconds=5):
     """
-    Segment data into fixed-size windows using the 'timestamp' field to group data.
-    This function calculates the time delta since the first timestamp and divides it into fixed-sized windows.
+    Segment data into fixed-size windows based on the timestamp.
     """
-    # Ensure 'timestamp' is a datetime object
     data['timestamp'] = pd.to_datetime(data['timestamp'], errors='coerce')
-    
-    # Calculate windows based on the time difference in seconds from the start
     start_time = data['timestamp'].min()
     data['seconds_since_start'] = (data['timestamp'] - start_time).dt.total_seconds()
     data['window_id'] = (data['seconds_since_start'] // window_size_seconds).astype(int)
-    
     return data
 
 
-def calculate_sway_area(data_x, data_y):
+def calculate_confidence_ellipse_area(x, y, confidence=0.95):
     """
-    Calculate the integral of the absolute difference between data_x and data_y.
+    Calculate the area of the ellipse that encloses the 95% confidence interval
+    of the 2D points (x, y). For a bivariate normal distribution, the area is:
+      A = π * (chi2.ppf(confidence, 2)) * sqrt(det(Cov))
     """
-    return np.trapz(abs(data_x - data_y))
+    data = np.vstack([x, y])
+    cov = np.cov(data)
+    det_cov = np.linalg.det(cov)
+    chi2_val = chi2.ppf(confidence, df=2)
+    area = np.pi * chi2_val * np.sqrt(det_cov)
+    return area
 
 
-# FIXME
-def calculate_sway_volume(data_x, data_y, data_z):
+def calculate_sway_volume(data_x, data_y, data_z, confidence=0.95):
     """
-    Calculate a simplistic version of the sway volume as the product of integrals in all three dimensions.
+    Calculate the volume of the sphere that encloses 95% of the 3D points.
     """
-    area_xy = calculate_sway_area(data_x, data_y)
-    area_yz = calculate_sway_area(data_y, data_z)
-    area_xz = calculate_sway_area(data_x, data_z)
-    return area_xy + area_yz + area_xz  # simple additive approximation
+    points = np.vstack([data_x, data_y, data_z]).T
+    center = np.mean(points, axis=0)
+    distances = np.linalg.norm(points - center, axis=1)
+    r = np.percentile(distances, 95)
+    volume = (4/3) * np.pi * (r ** 3)
+    return volume
 
 
 def calculate_gait_features(acc_data, frequency=50):
     """
-    Calculate gait-related features such as steps, cadence, velocity, and residual step length.
+    Calculate gait features: number of steps and cadence.
+    Returns (steps, cadence, peaks).
     """
-    g_mag = np.sqrt(np.sum(np.square(acc_data), axis=1))  # magnitude of gravity corrected acceleration
-    peaks, _ = find_peaks(g_mag, height=np.mean(g_mag) + np.std(g_mag))  # detecting peaks
+    # Compute magnitude of accelerometer data (assumed gravity-corrected)
+    g_mag = np.sqrt(np.sum(np.square(acc_data), axis=1))
+    threshold = np.mean(g_mag) + np.std(g_mag)
+    peaks, _ = find_peaks(g_mag, height=threshold)
     steps = len(peaks)
-    cadence = steps / (len(acc_data) / frequency / 60)  # steps per minute using some Hz sampling rate
-    return steps, cadence
+    duration_minutes = (len(acc_data) / frequency) / 60
+    cadence = steps / duration_minutes if duration_minutes > 0 else 0
+    return steps, cadence, peaks
 
 
 def calculate_statistical_features(data):
     """
-    Calculate skewness and kurtosis from data.
+    Compute skewness and kurtosis of the data.
     """
     return skew(data), kurtosis(data)
 
@@ -79,151 +88,181 @@ def calculate_harmonics(data):
     Calculate Total Harmonic Distortion (THD) using a periodogram.
     """
     freqs, pxx = periodogram(data)
+    if len(pxx) < 6 or pxx[1] == 0:
+        return 0
     fundamental = np.abs(pxx[1])
     harmonics = np.abs(pxx[2:6])
-    thd = np.sum(harmonics**2)**0.5 / fundamental
+    thd = np.sqrt(np.sum(harmonics**2)) / fundamental
     return thd
 
 
-def calculate_velocity_and_residual(acc_data, steps):
+def calculate_velocity_and_residual(acc_signal, frequency=50):
     """
-    Calculate average velocity and residual step length of gait.
+    Detrend and integrate a gravity-corrected acceleration signal to obtain a velocity signal,
+    then compute the average gait velocity and residual step length from detected steps.
     """
-    if steps > 0:
-        avg_velocity = np.sum(acc_data) / steps  # Simplified version
-        residual_step_length = avg_velocity - np.mean(acc_data)
-    else:
-        avg_velocity, residual_step_length = 0, 0
+    dt = 1 / frequency
+    acc_detrended = signal.detrend(acc_signal)
+    velocity = np.cumsum(acc_detrended) * dt
+
+    peaks, _ = find_peaks(acc_signal, height=np.mean(acc_signal) + np.std(acc_signal))
+    if len(peaks) < 2:
+        return 0, 0  # Not enough steps to compute features
+
+    step_lengths = []
+    for i in range(1, len(peaks)):
+        start, end = peaks[i-1], peaks[i]
+        displacement = np.trapz(velocity[start:end], dx=dt)
+        step_lengths.append(displacement)
+    avg_step_length = np.mean(step_lengths)
+    residual_step_length = np.mean(np.abs(np.array(step_lengths) - avg_step_length))
+    total_displacement = np.trapz(velocity, dx=dt)
+    total_time = len(acc_signal) * dt
+    avg_velocity = total_displacement / total_time if total_time > 0 else 0
     return avg_velocity, residual_step_length
 
 
-def calculate_frequency_ratio(data):
+def calculate_step_time_features(acc_signal, frequency=50):
     """
-    Calculate the ratio of high to low frequency energy.
+    Calculate average step time and residual step time from the accelerometer signal.
     """
-    frequencies, power_spectrum = welch(data)
-    high_freq_power = np.sum(power_spectrum[frequencies > 1.0])  # Arbitrary cutoff frequency
-    low_freq_power = np.sum(power_spectrum[frequencies <= 1.0])
-    return high_freq_power / low_freq_power if low_freq_power != 0 else 0
-
-
-def calculate_band_power(data):
-    """
-    Calculate band power of the signal.
-    """
-    _, power_spectrum = welch(data)
-    return np.sum(power_spectrum)
-
-
-def calculate_signal_noise_ratio(data):
-    """
-    Estimate the signal to noise ratio.
-    """
-    signal_power = np.mean(data**2)
-    noise_power = np.var(data)
-    return 10 * np.log10(signal_power / noise_power) if noise_power != 0 else 0
+    dt = 1 / frequency
+    peaks, _ = find_peaks(acc_signal, height=np.mean(acc_signal) + np.std(acc_signal))
+    if len(peaks) < 2:
+        return 0, 0
+    step_intervals = np.diff(peaks) * dt
+    avg_step_time = np.mean(step_intervals)
+    residual_step_time = np.mean(np.abs(step_intervals - avg_step_time))
+    return avg_step_time, residual_step_time
 
 
 def calculate_velocity_features(acc_data, frequency=50):
-    """ Calculate mean and variance for velocity data (smartphone or smartwatch). """
-    time_delta = 1 / frequency
-
-    velocity_x = np.cumsum(acc_data['acc_x'] * time_delta)
-    velocity_y = np.cumsum(acc_data['acc_y'] * time_delta)
-    velocity_z = np.cumsum(acc_data['acc_z'] * time_delta)
+    """
+    Calculate mean and variance for velocity signals obtained from accelerometer data.
+    Expects a DataFrame with columns: 'acc_x', 'acc_y', 'acc_z'.
+    """
+    dt = 1 / frequency
+    velocity_x = np.cumsum(acc_data['acc_x'] * dt)
+    velocity_y = np.cumsum(acc_data['acc_y'] * dt)
+    velocity_z = np.cumsum(acc_data['acc_z'] * dt)
     
-    mean_x = np.mean(velocity_x)
-    var_x = np.var(velocity_x)
-    mean_y = np.mean(velocity_y)
-    var_y = np.var(velocity_y)
-    mean_z = np.mean(velocity_z)
-    var_z = np.var(velocity_z)
-    
-    return mean_x, var_x, mean_y, var_y, mean_z, var_z
+    return (np.mean(velocity_x), np.var(velocity_x),
+            np.mean(velocity_y), np.var(velocity_y),
+            np.mean(velocity_z), np.var(velocity_z))
 
 
 def calculate_angular_velocity_features(gyro_data, frequency=50):
-    """ Calculate mean and variance for angular velocity data (smartwatch). """
-    time_delta = 1 / frequency
-
-    angular_velocity_x = np.cumsum(gyro_data['gyro_x'] * time_delta)
-    angular_velocity_y = np.cumsum(gyro_data['gyro_y'] * time_delta)
-    angular_velocity_z = np.cumsum(gyro_data['gyro_z'] * time_delta)
+    """
+    Calculate mean and variance for angular velocity signals.
+    Expects a DataFrame with columns: 'gyro_x', 'gyro_y', 'gyro_z'.
+    """
+    dt = 1 / frequency
+    angular_velocity_x = np.cumsum(gyro_data['gyro_x'] * dt)
+    angular_velocity_y = np.cumsum(gyro_data['gyro_y'] * dt)
+    angular_velocity_z = np.cumsum(gyro_data['gyro_z'] * dt)
     
-    mean_x = np.mean(angular_velocity_x)
-    var_x = np.var(angular_velocity_x)
-    mean_y = np.mean(angular_velocity_y)
-    var_y = np.var(angular_velocity_y)
-    mean_z = np.mean(angular_velocity_z)
-    var_z = np.var(angular_velocity_z)
-    
-    return mean_x, var_x, mean_y, var_y, mean_z, var_z
+    return (np.mean(angular_velocity_x), np.var(angular_velocity_x),
+            np.mean(angular_velocity_y), np.var(angular_velocity_y),
+            np.mean(angular_velocity_z), np.var(angular_velocity_z))
 
 
 def calculate_combined_features(df):
     """
-    Calculate combined derived features for both smartphone and smartwatch data.
+    Calculate all high-level features for both smartphone and smartwatch data.
     """
-    steps_smartphone, cadence_smartphone = calculate_gait_features(df[['acc_x_smartphone', 'acc_y_smartphone', 'acc_z_smartphone']])
-    velocity_mean_x_smartphone, velocity_var_x_smartphone, velocity_mean_y_smartphone, velocity_var_y_smartphone, velocity_mean_z_smartphone, velocity_var_z_smartphone = calculate_velocity_features(df[['acc_x_smartphone', 'acc_y_smartphone', 'acc_z_smartphone']].rename(columns=lambda c: c.replace('_smartphone', ''), inplace=True))
-    angular_mean_yaw_smartwatch, angular_var_yaw_smartwatch, angular_mean_pitch_smartwatch, angular_var_pitch_smartwatch, angular_mean_roll_smartwatch, angular_var_roll_smartwatch = calculate_angular_velocity_features(df[['gyro_x_smartphone', 'gyro_y_smartphone', 'gyro_z_smartphone']].rename(columns=lambda c: c.replace('_smartphone', ''), inplace=True))
-
-    velocity_mean_x_smartwatch, velocity_var_x_smartwatch, velocity_mean_y_smartwatch, velocity_var_y_smartwatch, velocity_mean_z_smartwatch, velocity_var_z_smartwatch = calculate_velocity_features(df[['acc_x_smartwatch', 'acc_y_smartwatch', 'acc_z_smartwatch']].rename(columns=lambda c: c.replace('_smartwatch', ''), inplace=True))
-
+    # Smartphone features
+    smartphone_acc = df[['acc_x_smartphone', 'acc_y_smartphone', 'acc_z_smartphone']].values
+    steps, cadence, _ = calculate_gait_features(smartphone_acc, frequency=50)
+    avg_velocity, residual_step_length = calculate_velocity_and_residual(df['acc_z_smartphone'].values, frequency=50)
+    avg_step_time, residual_step_time = calculate_step_time_features(df['acc_z_smartphone'].values, frequency=50)
+    
+    smartphone_acc_df = df[['acc_x_smartphone', 'acc_y_smartphone', 'acc_z_smartphone']].copy()
+    smartphone_acc_df.columns = ['acc_x', 'acc_y', 'acc_z']
+    velocity_feats = calculate_velocity_features(smartphone_acc_df, frequency=50)
+    
+    XY_sway_area = calculate_confidence_ellipse_area(df['gyro_x_smartphone'], df['gyro_y_smartphone'])
+    YZ_sway_area = calculate_confidence_ellipse_area(df['gyro_y_smartphone'], df['gyro_z_smartphone'])
+    XZ_sway_area = calculate_confidence_ellipse_area(df['gyro_x_smartphone'], df['gyro_z_smartphone'])
+    sway_volume = calculate_sway_volume(df['gyro_x_smartphone'], df['gyro_y_smartphone'], df['gyro_z_smartphone'])
+    
+    freq_ratio = calculate_frequency_ratio(df['acc_z_smartphone'])
+    band_power = calculate_band_power(df['acc_z_smartphone'])
+    snr = calculate_signal_noise_ratio(df['acc_z_smartphone'])
+    skewness, kurt = calculate_statistical_features(df['acc_z_smartphone'])
+    thd = calculate_harmonics(df['acc_z_smartphone'])
+    
+    # Smartwatch features (accelerometer velocity and gyroscope angular velocity)
+    smartwatch_acc = df[['acc_x_smartwatch', 'acc_y_smartwatch', 'acc_z_smartwatch']].copy()
+    smartwatch_acc.columns = ['acc_x', 'acc_y', 'acc_z']
+    velocity_feats_sw = calculate_velocity_features(smartwatch_acc, frequency=50)
+    
+    smartwatch_gyro = df[['gyro_x_smartwatch', 'gyro_y_smartwatch', 'gyro_z_smartwatch']].copy()
+    smartwatch_gyro.columns = ['gyro_x', 'gyro_y', 'gyro_z']
+    angular_velocity_feats = calculate_angular_velocity_features(smartwatch_gyro, frequency=50)
+    
+    XY_sway_area_sw = calculate_confidence_ellipse_area(df['gyro_x_smartwatch'], df['gyro_y_smartwatch'])
+    YZ_sway_area_sw = calculate_confidence_ellipse_area(df['gyro_y_smartwatch'], df['gyro_z_smartwatch'])
+    XZ_sway_area_sw = calculate_confidence_ellipse_area(df['gyro_x_smartwatch'], df['gyro_z_smartwatch'])
+    sway_volume_sw = calculate_sway_volume(df['gyro_x_smartwatch'], df['gyro_y_smartwatch'], df['gyro_z_smartwatch'])
+    
     return pd.Series({
-        'XY_sway_area_smartphone': calculate_sway_area(df['gyro_x_smartphone'], df['gyro_y_smartphone']),
-        'YZ_sway_area_smartphone': calculate_sway_area(df['gyro_y_smartphone'], df['gyro_z_smartphone']),
-        'XZ_sway_area_smartphone': calculate_sway_area(df['gyro_x_smartphone'], df['gyro_z_smartphone']),
-        'Sway_volume_smartphone': calculate_sway_volume(df['gyro_x_smartphone'], df['gyro_y_smartphone'], df['gyro_z_smartphone']),
-        'Steps_smartphone': steps_smartphone,
-        'Cadence_smartphone': cadence_smartphone,
-        'Frequency_ratio_smartphone': calculate_frequency_ratio(df['acc_z_smartphone']),
-        'Residual_step_length_smartphone': calculate_velocity_and_residual(df['acc_z_smartphone'], steps_smartphone)[1],
-        'Band_power_smartphone': calculate_band_power(df['acc_z_smartphone']),
-        'Signal_noise_ratio_smartphone': calculate_signal_noise_ratio(df['acc_z_smartphone']),
-        'Skewness_smartphone': calculate_statistical_features(df['acc_z_smartphone'])[0],
-        'Kurtosis_smartphone': calculate_statistical_features(df['acc_z_smartphone'])[1],
-        'Total_harmonic_distortion_smartphone': calculate_harmonics(df['acc_z_smartphone']),
-        'XY_sway_area_smartwatch': calculate_sway_area(df['gyro_x_smartwatch'], df['gyro_y_smartwatch']),
-        'YZ_sway_area_smartwatch': calculate_sway_area(df['gyro_y_smartwatch'], df['gyro_z_smartwatch']),
-        'XZ_sway_area_smartwatch': calculate_sway_area(df['gyro_x_smartwatch'], df['gyro_z_smartwatch']),
-        'Sway_volume_smartwatch': calculate_sway_volume(df['gyro_x_smartwatch'], df['gyro_y_smartwatch'], df['gyro_z_smartwatch']),
-        'Band_power_smartwatch': calculate_band_power(df['acc_z_smartwatch']),
-        'Signal_noise_ratio_smartwatch': calculate_signal_noise_ratio(df['acc_z_smartwatch']),
-        'Velocity_mean_X_smartphone': velocity_mean_x_smartphone,
-        'Velocity_variance_X_smartphone': velocity_var_x_smartphone,
-        'Velocity_mean_Y_smartphone': velocity_mean_y_smartphone,
-        'Velocity_variance_Y_smartphone': velocity_var_y_smartphone,
-        'Velocity_mean_Z_smartphone': velocity_mean_z_smartphone,
-        'Velocity_variance_Z_smartphone': velocity_var_z_smartphone,
-        'Angular_velocity_mean_Yaw_smartwatch': angular_mean_yaw_smartwatch,
-        'Angular_velocity_variance_Yaw_smartwatch': angular_var_yaw_smartwatch,
-        'Angular_velocity_mean_Pitch_smartwatch': angular_mean_pitch_smartwatch,
-        'Angular_velocity_variance_Pitch_smartwatch': angular_var_pitch_smartwatch,
-        'Angular_velocity_mean_Roll_smartwatch': angular_mean_roll_smartwatch,
-        'Angular_velocity_variance_Roll_smartwatch': angular_var_roll_smartwatch,
-        'Velocity_mean_X_smartwatch': velocity_mean_x_smartwatch,
-        'Velocity_variance_X_smartwatch': velocity_var_x_smartwatch,
-        'Velocity_mean_Y_smartwatch': velocity_mean_y_smartwatch,
-        'Velocity_variance_Y_smartwatch': velocity_var_y_smartwatch,
-        'Velocity_mean_Z_smartwatch': velocity_mean_z_smartwatch,
-        'Velocity_variance_Z_smartwatch': velocity_var_z_smartwatch
+        # Smartphone features
+        'steps_smartphone': steps,
+        'cadence_smartphone': cadence,
+        'avg_velocity_smartphone': avg_velocity,
+        'residual_step_length_smartphone': residual_step_length,
+        'avg_step_time_smartphone': avg_step_time,
+        'residual_step_time_smartphone': residual_step_time,
+        'XY_sway_area_smartphone': XY_sway_area,
+        'YZ_sway_area_smartphone': YZ_sway_area,
+        'XZ_sway_area_smartphone': XZ_sway_area,
+        'sway_volume_smartphone': sway_volume,
+        'frequency_ratio_smartphone': freq_ratio,
+        'band_power_smartphone': band_power,
+        'signal_noise_ratio_smartphone': snr,
+        'skewness_smartphone': skewness,
+        'kurtosis_smartphone': kurt,
+        'total_harmonic_distortion_smartphone': thd,
+        'velocity_mean_X_smartphone': velocity_feats[0],
+        'velocity_variance_X_smartphone': velocity_feats[1],
+        'velocity_mean_Y_smartphone': velocity_feats[2],
+        'velocity_variance_Y_smartphone': velocity_feats[3],
+        'velocity_mean_Z_smartphone': velocity_feats[4],
+        'velocity_variance_Z_smartphone': velocity_feats[5],
+        # Smartwatch features
+        'XY_sway_area_smartwatch': XY_sway_area_sw,
+        'YZ_sway_area_smartwatch': YZ_sway_area_sw,
+        'XZ_sway_area_smartwatch': XZ_sway_area_sw,
+        'sway_volume_smartwatch': sway_volume_sw,
+        'velocity_mean_X_smartwatch': velocity_feats_sw[0],
+        'velocity_variance_X_smartwatch': velocity_feats_sw[1],
+        'velocity_mean_Y_smartwatch': velocity_feats_sw[2],
+        'velocity_variance_Y_smartwatch': velocity_feats_sw[3],
+        'velocity_mean_Z_smartwatch': velocity_feats_sw[4],
+        'velocity_variance_Z_smartwatch': velocity_feats_sw[5],
+        'angular_velocity_mean_X_smartwatch': angular_velocity_feats[0],
+        'angular_velocity_variance_X_smartwatch': angular_velocity_feats[1],
+        'angular_velocity_mean_Y_smartwatch': angular_velocity_feats[2],
+        'angular_velocity_variance_Y_smartwatch': angular_velocity_feats[3],
+        'angular_velocity_mean_Z_smartwatch': angular_velocity_feats[4],
+        'angular_velocity_variance_Z_smartwatch': angular_velocity_feats[5]
     })
 
 
 def calculate_features(data):
     """
-    Apply all derived feature calculations across windowed data.
+    Apply feature extraction on each window of segmented data.
     """
     return data.groupby('window_id').apply(calculate_combined_features).reset_index()
 
 
 def sensor_data_pipeline(raw_data):
     """
-    Unified function to run the entire ETL pipeline.
+    Run the complete ETL pipeline: preprocessing, outlier removal, segmentation,
+    and feature extraction.
     """
-    preprocessed_data = load_and_preprocess_data(raw_data)
-    cleaned_data = normalize_and_remove_outliers(preprocessed_data)
-    segmented_data = segment_data(cleaned_data)
-    features = calculate_features(segmented_data)
+    preprocessed = load_and_preprocess_data(raw_data)
+    cleaned = normalize_and_remove_outliers(preprocessed)
+    segmented = segment_data(cleaned)
+    features = calculate_features(segmented)
     return features
