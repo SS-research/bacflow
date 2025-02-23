@@ -1,6 +1,6 @@
+import typing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import typing
 
 
 @dataclass

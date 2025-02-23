@@ -2,7 +2,7 @@
 
 # BACflow
 
-<img src="resources/BACflow.png" width="256" height="256"/>
+<img src="static/BACflow.png" width="256" height="256"/>
 
 machine learning framework for blood alcohol content (BAC) estimation.
 </div>
