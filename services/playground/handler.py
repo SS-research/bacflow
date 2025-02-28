@@ -6,8 +6,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from bacflow.simulation import simulate
-from bacflow.compute import simulation_female, simulation_male
-from bacflow.bacflow.schemas import Drink
+from bacflow.compute import simulation_F, simulation_M
+from bacflow.bacflow.schemas import Drink, Person
 
 
 # Load drink information
@@ -17,7 +17,7 @@ drink_info = pd.read_csv("../../resources/dataset.csv")
 st.title("BACflow: Estimate your Blood Alcohol Concentration (BAC)")
 
 st.sidebar.header("Enter your information")
-sex = st.sidebar.selectbox("Sex", ["Male", "Female"])
+sex = st.sidebar.selectbox("Sex", ["M", "F"])
 age = st.sidebar.slider("Age", 18, 100, 18)
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
@@ -70,7 +70,7 @@ if add_drink:
             key=lambda x: x.time
         )
     except ValueError:
-        st.sidebar.error("Incorrect time format. Please use YYYY-MM-DD HH:MM.")    
+        st.sidebar.error("Incorrect time format. Please use YYYY-MM-DD HH:MM.")
 
 # Display added drinks with delete option
 st.header("Drunken drinks")
@@ -83,13 +83,15 @@ for i, drink in enumerate(st.session_state.drinks):
             st.session_state.drinks.pop(i)
             st.experimental_rerun()
 
+person = Person(age=age, height=height / 100, weight=weight, sex=sex)
+
 # Calculate BAC
 if st.session_state.drinks:
     if not simulation:
         st.error("Please select one or more simulation models.")
     else:
         results = simulate(
-            st.session_state.drinks, age, height / 100, weight, sex, absorption_halflife, simulation
+            st.session_state.drinks, person, absorption_halflife, simulation
         )
 
         st.header("BAC over time")
