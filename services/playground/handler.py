@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from bacflow.modeling import simulation_F, simulation_M
-from bacflow.schemas import Drink, Person
+from bacflow.schemas import Drink, Model, Person, Sex
 from bacflow.simulation import simulate
 
 
@@ -17,16 +17,16 @@ drink_info = pd.read_csv("../../resources/dataset.csv")
 st.title("BACflow: Estimate your Blood Alcohol Concentration (BAC)")
 
 st.sidebar.header("Enter your information")
-sex = st.sidebar.selectbox("Sex", ["M", "F"])
+sex = Sex(st.sidebar.selectbox("Sex", ["M", "F"]))
 age = st.sidebar.slider("Age", 18, 100, 18)
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
 absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) * 60
 simulation = st.sidebar.multiselect(
     "Select simulation models",
-    simulation_male if sex == "Male" else simulation_female,
-    default=["seidl"],
-    format_func=lambda model: model if model == "average" else model.capitalize()
+    simulation_M if sex == Sex.M else simulation_F,
+    default=[Model.Seidl],
+    format_func=lambda model: str(model)
 )
 
 st.sidebar.header("Add a drink")
@@ -103,7 +103,7 @@ if st.session_state.drinks:
                 x=bac_ts['time'],
                 y=bac_ts['bac_perc'],
                 mode='lines',
-                name=model if model == "average" else model.capitalize()
+                name=str(model)
             ))
 
         fig.update_layout(
