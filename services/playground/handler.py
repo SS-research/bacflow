@@ -5,9 +5,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from bacflow.modeling import simulation_F, simulation_M
+from bacflow.schemas import Drink, Person
 from bacflow.simulation import simulate
-from bacflow.compute import simulation_F, simulation_M
-from bacflow.bacflow.schemas import Drink, Person
 
 
 # Load drink information
