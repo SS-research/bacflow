@@ -1,6 +1,23 @@
 import typing
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from enum import Enum
+
+
+class Sex(str, Enum):
+    F = "F"
+    M = "M"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class Person:
+    age: int
+    height: float 
+    weight: float 
+    sex: Sex
 
 
 @dataclass
