@@ -4,6 +4,18 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 
+class Model(str, Enum):
+    average = "average"
+    Forrest = "Forrest"
+    Seidl = "Seidl"
+    Ulrich = "Ulrich"
+    Watson = "Watson"
+    Widmark = "Widmark"
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class Sex(str, Enum):
     F = "F"
     M = "M"
