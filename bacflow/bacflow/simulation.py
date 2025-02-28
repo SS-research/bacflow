@@ -1,9 +1,25 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from deltatime import timedelta
 
 import pandas as pd
 
-from bacflow.compute import calc_aer, calc_body_factor, cumulative_absorption
+from bacflow.modeling import calculate_bac_for_model
 from bacflow.schemas import Drink
+
+
+def cumulative_absorption(drinks: list[Drink], absorption_halflife: int, start_time: datetime, end_time: datetime) -> pd.DataFrame:
+    t_sec = np.arange(start_time.timestamp(), end_time.timestamp(), 60)
+    absorption_mat = np.zeros((len(drinks), len(t_sec)))
+
+    for i, drink in enumerate(drinks):
+        absorption_mat[i, :] = drink.alc_kg * (1 - np.exp(-(t_sec - drink.time.timestamp()) * np.log(2) / absorption_halflife))
+
+    absorption_mat[absorption_mat < 0] = 0
+    kg_absorbed = absorption_mat.sum(axis=0)
+
+    df = pd.DataFrame({'kg_absorbed': kg_absorbed, 'time': t_sec})
+    df['time'] = pd.to_datetime(df['time'], unit='s', utc=True).dt.tz_convert(start_time.tzinfo)
+    return df
 
 
 def simulate(
@@ -35,7 +51,6 @@ def simulate(
     results = {}
     last_elim_idx = 0
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     with ThreadPoolExecutor() as executor:
         future_to_model = {
             executor.submit(
@@ -54,39 +69,3 @@ def simulate(
         results[model] = results[model].loc[:last_elim_idx]
 
     return results
-
-
-def calculate_bac_for_model(
-    age: int,
-    height: float, 
-    weight: float, 
-    sex: str, 
-    absorption: pd.DataFrame, 
-    model: str,
-    absorption_end_idx: int
-) -> tuple[pd.DataFrame, int]:
-    r = calc_body_factor(age, height, weight, sex, model)
-
-    model_bac_ts = absorption.copy()
-    model_bac_ts['bac_excluding_elimination'] = model_bac_ts['kg_absorbed'] / (r * weight)
-    model_bac_ts['eliminated'] = 0.0 
-
-    for i in range(1, len(model_bac_ts)):
-        # Available alcohol at current step (before elimination)
-        current_bac = model_bac_ts.at[i, 'bac_excluding_elimination'] - model_bac_ts.at[i-1, 'eliminated']
-        # Compute dynamic elimination rate using previous BAC value
-        prev_bac = model_bac_ts.at[i-1, 'bac']
-        current_aer = calc_aer(sex, prev_bac)
-        # For a 1-minute interval, elimination is current_aer divided by 60
-        elimination_interval = current_aer / 60
-        model_bac_ts.at[i, 'eliminated'] = model_bac_ts.at[i-1, 'eliminated'] + min(current_bac, elimination_interval)
-
-    model_bac_ts['bac'] = model_bac_ts['bac_excluding_elimination'] - model_bac_ts['eliminated']
-    model_bac_ts['bac_perc'] = model_bac_ts['bac'] * 100
-
-    bac_zero_idx = model_bac_ts.loc[absorption_end_idx:].loc[model_bac_ts['bac'] == 0.0].index.min()
-
-    if pd.isna(bac_zero_idx):
-        bac_zero_idx = len(model_bac_ts)
-
-    return model_bac_ts, bac_zero_idx
