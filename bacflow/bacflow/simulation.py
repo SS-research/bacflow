@@ -4,7 +4,7 @@ from deltatime import timedelta
 import pandas as pd
 
 from bacflow.modeling import calculate_bac_for_model
-from bacflow.schemas import Drink, Person
+from bacflow.schemas import Drink, Model, Person
 
 
 def cumulative_absorption(drinks: list[Drink], absorption_halflife: int, start_time: datetime, end_time: datetime) -> pd.DataFrame:
@@ -26,8 +26,8 @@ def simulate(
     drinks: list[Drink], 
     person: Person,
     absorption_halflife: float, 
-    simulation: list[str]
-) -> dict[str, pd.DataFrame]:
+    simulation: list[Model]
+) -> dict[Model, pd.DataFrame]:
     """
     Runs the BAC simulation using the provided parameters.
     """
