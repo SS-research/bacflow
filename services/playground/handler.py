@@ -2,10 +2,10 @@ from bisect import insort
 from datetime import datetime
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from bacflow.modeling import simulation_F, simulation_M
+from bacflow.plotting import plot_simulation
 from bacflow.schemas import Drink, Model, Person, Sex
 from bacflow.simulation import simulate
 
@@ -97,20 +97,7 @@ if st.session_state.drinks:
         st.header("BAC over time")
         st.write("Note: The BAC percentage is equivalent to g/dL.")
 
-        fig = go.Figure()
-        for model, bac_ts in results.items():
-            fig.add_trace(go.Scatter(
-                x=bac_ts['time'],
-                y=bac_ts['bac_perc'],
-                mode='lines',
-                name=str(model)
-            ))
-
-        fig.update_layout(
-            xaxis_title='Time',
-            yaxis_title='BAC (%)'
-        )
-
+        fig = plot_simulation(results)
         st.plotly_chart(fig)
 else:
     st.write("No drinks added yet.")
