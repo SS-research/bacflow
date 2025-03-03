@@ -9,6 +9,15 @@ from bacflow.schemas import DriverProfile
 _geolocator = Nominatim(user_agent="BACflow")
 
 
+def unwrap_location(location: dict) -> tuple[float, float]:
+    coordinates = location.get("coords", {})
+    
+    latitude = coordinates.get("latitude")
+    longitude = coordinates.get("longitude")
+
+    return latitude, longitude
+
+
 def get_threshold_by_driver_profile_threshold(
     latitude: float, longitude: float, profile: DriverProfile, mapping: pandas.DataFrame
 ) -> float | None:
