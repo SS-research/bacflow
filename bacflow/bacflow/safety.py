@@ -43,7 +43,7 @@ def get_threshold_by_driver_profile_threshold(
 
         return None
 
-    threshold = record.iloc[0][profile]
+    threshold = record.iloc[0][str(profile)]
 
     if pandas.isna(threshold):
         return None
