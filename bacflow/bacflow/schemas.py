@@ -4,6 +4,15 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 
+class DriverProfile(str, Enum):
+    general = "average"
+    novice = "novice"
+    professional = "professional"
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class Model(str, Enum):
     average = "average"
     Forrest = "Forrest"
