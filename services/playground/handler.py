@@ -3,16 +3,30 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from streamlit_js_eval import get_geolocation
 
+from bacflow.geolocation import unwrap_location
 from bacflow.modeling import simulation_F, simulation_M
 from bacflow.plotting import plot_simulation
 from bacflow.schemas import Drink, Model, Person, Sex
 from bacflow.simulation import simulate
 
 
-# Load drink information
-drink_info = pd.read_csv("../../resources/dataset.csv")
+def _get_latlon_from_geolocation() -> tuple[float| None, float | None]:
+    location = get_geolocation()
 
+    if not location:
+        return None, None
+
+    return unwrap_location(location)
+
+
+@st.cache_data
+def fetch_and_clean_dataset():
+    return pandas.read_csv("../../resources/dataset.csv")
+
+
+drink_info = fetch_and_clean_dataset()
 # UI Components
 st.title("BACflow: Estimate your Blood Alcohol Concentration (BAC)")
 
@@ -49,6 +63,7 @@ add_drink = st.sidebar.button("Add drink")
 # Initialize session state for drinks
 if 'drinks' not in st.session_state:
     st.session_state.drinks = []
+
 
 # Add drink to session state
 if add_drink:
