@@ -37,7 +37,7 @@ volume = st.sidebar.slider(
 )
 alc_perc = st.sidebar.slider(
     "Percent alcohol", 0, 100,
-    int(drink_info[drink_info['drink'] == drink_type]['alc_prop'].iloc[0] * 100)
+    int(drink_info[drink_info['drink'] == drink_type]['proportion'].iloc[0] * 100)
 )
 drink_time_str = st.sidebar.text_input(
     "Time of consumption (YYYY-MM-DD HH:MM)",
