@@ -1,4 +1,4 @@
-drink,volume,alc_prop,color
+drink,volume,proportion,color
 beer,33,0.05,darkgoldenrod
 wine,15,0.12,red
 long drink,25,0.05,blue
