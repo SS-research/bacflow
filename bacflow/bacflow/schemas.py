@@ -35,7 +35,7 @@ class Sex(str, Enum):
 
 @dataclass
 class Person:
-    age: int
+    DoB: datetime
     height: float 
     weight: float 
     sex: Sex
