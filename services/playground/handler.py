@@ -22,6 +22,18 @@ def _get_coordinates() -> tuple[float| None, float | None]:
     return latitude, longitude
 
 
+def _get_min_age_threshold(age: int) -> datetime:
+    today = datetime.now()
+    day = today.day
+
+    try:
+        threshold = today.replace(year=today.year - age)
+    except ValueError:
+        threshold = today.replace(year=today.year - age, day=today.day - 1)
+
+    return threshold
+
+
 @st.cache_data
 def fetch_DUI_mapping():
     return pandas.read_csv("../../resources/DUI-driving-limits-by-alpha-2.csv")
@@ -42,7 +54,7 @@ st.title("BACflow: Estimate your Blood Alcohol Concentration (BAC)")
 st.sidebar.header("Enter your information")
 profile = DriverProfile(st.sidebar.selectbox("What kind of driver are you?", [profile.value for profile in DriverProfile]))
 sex = Sex(st.sidebar.selectbox("Sex", [sex.value for sex in Sex]))
-age = st.sidebar.slider("Age", 18, 100, 18)
+DoB = st.sidebar.date_input("Date of Birth", max_value=_get_min_age_threshold(18))
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
 absorption_halflife = st.sidebar.slider("Absorption halflife (min)", 6, 18, 12) * 60
@@ -73,7 +85,6 @@ add_drink = st.sidebar.button("Add drink")
 # Initialize session state for drinks
 if 'drinks' not in st.session_state:
     st.session_state.drinks = []
-
 
 # Add drink to session state
 if add_drink:
@@ -108,7 +119,7 @@ for i, drink in enumerate(st.session_state.drinks):
             st.session_state.drinks.pop(i)
             st.experimental_rerun()
 
-person = Person(age=age, height=height / 100, weight=weight, sex=sex)
+person = Person(DoB=DoB, height=height / 100, weight=weight, sex=sex)
 threshold = get_threshold_by_driver_profile(latitude, longitude, profile, DUI_mapping)
 
 if threshold:
