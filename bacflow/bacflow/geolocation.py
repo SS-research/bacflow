@@ -9,7 +9,7 @@ from bacflow.schemas import DriverProfile
 _geolocator = Nominatim(user_agent="BACflow")
 
 
-def unwrap_location(location: dict) -> tuple[float, float]:
+def decode_coordinates(location: dict) -> tuple[float, float]:
     coordinates = location.get("coords", {})
     
     latitude = coordinates.get("latitude")
@@ -18,7 +18,7 @@ def unwrap_location(location: dict) -> tuple[float, float]:
     return latitude, longitude
 
 
-def get_threshold_by_driver_profile_threshold(
+def get_threshold_by_driver_profile(
     latitude: float, longitude: float, profile: DriverProfile, mapping: pandas.DataFrame
 ) -> float | None:
     """driving under the influence (DUI) threshold by location and driver profile"""
