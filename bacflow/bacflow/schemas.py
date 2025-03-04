@@ -1,6 +1,6 @@
 import typing
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 
 
@@ -35,10 +35,15 @@ class Sex(str, Enum):
 
 @dataclass
 class Person:
-    DoB: datetime
+    DoB: date
     height: float 
     weight: float 
     sex: Sex
+
+    @property
+    def age(self) -> int:
+        today = date.today()
+        return today.year - self.DoB.year - ((today.month, today.day) < (self.DoB.month, self.DoB.day))
 
 
 @dataclass
