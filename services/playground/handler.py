@@ -3,21 +3,45 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from streamlit_js_eval import get_geolocation
 
+from bacflow.geolocation import get_threshold_by_driver_profile, decode_coordinates
 from bacflow.modeling import simulation_F, simulation_M
 from bacflow.plotting import plot_simulation
-from bacflow.schemas import Drink, Model, Person, Sex
+from bacflow.schemas import Drink, DriverProfile, Model, Person, Sex
 from bacflow.simulation import simulate
 
 
-# Load drink information
-drink_info = pd.read_csv("../../resources/dataset.csv")
+def _get_coordinates() -> tuple[float| None, float | None]:
+    location = get_geolocation()
 
+    if not location:
+        return None, None
+
+    latitude, longitude = decode_coordinates(location)
+    return latitude, longitude
+
+
+@st.cache_data
+def fetch_DUI_mapping():
+    return pandas.read_csv("../../resources/DUI-driving-limits-by-alpha-2.csv")
+
+
+@st.cache_data
+def fetch_dataset():
+    return pandas.read_csv("../../resources/dataset.csv")
+
+
+latitude, longitude = _get_coordinates()
+
+drink_info = fetch_dataset()
+DUI_mapping = fetch_DUI_mapping()
 # UI Components
 st.title("BACflow: Estimate your Blood Alcohol Concentration (BAC)")
 
 st.sidebar.header("Enter your information")
-sex = Sex(st.sidebar.selectbox("Sex", ["M", "F"]))
+profile = DriverProfile(st.sidebar.selectbox("What kind of driver are you?", [profile.value for profile in DriverProfile]))
+sex = Sex(st.sidebar.selectbox("Sex", [sex.value for sex in Sex]))
 age = st.sidebar.slider("Age", 18, 100, 18)
 height = st.sidebar.slider("Height (cm)", 140, 210, 170)
 weight = st.sidebar.slider("Weight (kg)", 40, 150, 82)
@@ -37,7 +61,7 @@ volume = st.sidebar.slider(
 )
 alc_perc = st.sidebar.slider(
     "Percent alcohol", 0, 100,
-    int(drink_info[drink_info['drink'] == drink_type]['alc_prop'].iloc[0] * 100)
+    int(drink_info[drink_info['drink'] == drink_type]['proportion'].iloc[0] * 100)
 )
 drink_time_str = st.sidebar.text_input(
     "Time of consumption (YYYY-MM-DD HH:MM)",
@@ -49,6 +73,7 @@ add_drink = st.sidebar.button("Add drink")
 # Initialize session state for drinks
 if 'drinks' not in st.session_state:
     st.session_state.drinks = []
+
 
 # Add drink to session state
 if add_drink:
@@ -84,6 +109,12 @@ for i, drink in enumerate(st.session_state.drinks):
             st.experimental_rerun()
 
 person = Person(age=age, height=height / 100, weight=weight, sex=sex)
+threshold = get_threshold_by_driver_profile(latitude, longitude, profile, DUI_mapping)
+
+if threshold:
+    st.write(f"The DUI driving limit for your profile is: {threshold} g/dL", icon="ℹ️")
+else:
+    st.warning("No information on the DUI driving limit for your profile.", icon="⚠️")
 
 # Calculate BAC
 if st.session_state.drinks:
@@ -97,7 +128,7 @@ if st.session_state.drinks:
         st.header("BAC over time")
         st.write("Note: The BAC percentage is equivalent to g/dL.")
 
-        fig = plot_simulation(results)
+        fig = plot_simulation(results, threshold)
         st.plotly_chart(fig)
 else:
     st.write("No drinks added yet.")
