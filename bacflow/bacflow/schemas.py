@@ -5,7 +5,7 @@ from enum import Enum
 
 
 class DriverProfile(str, Enum):
-    general = "general"
+    regular = "regular"
     novice = "novice"
     professional = "professional"
 
