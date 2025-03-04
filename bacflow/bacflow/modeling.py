@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from schemas import Drink, Model, Person, Sex
+from bacflow.schemas import Drink, Model, Person, Sex
 
 
 simulation_M = [Model.Forrest, Model.Seidl, Model.Widmark, Model.Watson, Model.average, Model.Ulrich]
