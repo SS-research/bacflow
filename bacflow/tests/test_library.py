@@ -18,6 +18,25 @@ from bacflow.schemas import Drink, Food, Person, Model, Sex
 # Use a fixed base time for testing (UTC)
 BASE_TIME = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
+
+@pytest.fixture
+def sample_person():
+    # A sample person: 30 years old male, 1.75m tall, 70kg.
+    return Person(age=30, height=1.75, weight=70, sex=Sex.M)
+
+@pytest.fixture
+def sample_drink():
+    # A sample drink at 00:10 on Jan 1, 2024.
+    dt = datetime(2024, 1, 1, 0, 10)
+    # For example, 330ml beer at 5% alcohol → 0.33 L * 0.05 * 0.789 ≈ 0.0130 kg alcohol.
+    return Drink(name="Beer", vol=0.33, alc_prop=0.05, time=dt, sip_interval=1)
+
+@pytest.fixture
+def sample_food():
+    # A sample food intake at 00:05 on Jan 1, 2024.
+    dt = datetime(2024, 1, 1, 0, 5)
+    return Food(name="Burger", time=dt, category="heavy")
+
 # ------------------------------------------------------------------------------
 # Tests for dynamic absorption: compute_halflife_vector
 # ------------------------------------------------------------------------------
