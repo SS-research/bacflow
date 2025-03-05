@@ -74,6 +74,7 @@ Below is a simple example to simulate BAC from a list of drinks using a single m
 ```python
 from datetime import datetime, timedelta, timezone
 from bacflow.schemas import Drink, Person, Model, Sex
+from bacflow.plotting import plot_simulation
 from bacflow.simulation import simulate, aggregate_simulation_results, identify_threshold_times
 
 # Define simulation parameters
@@ -109,6 +110,9 @@ drive_safe_time, sober_time = identify_threshold_times(aggregated, driving_limit
 
 print("Drive Safe Time:", drive_safe_time)
 print("Sober Time:", sober_time)
+
+fig = plot_simulation(aggregated, driving_limit)
+fig.show()
 ```
 
 ### API Overview
