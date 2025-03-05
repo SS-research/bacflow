@@ -4,6 +4,15 @@ from datetime import date, datetime, timedelta
 from enum import Enum
 
 
+class FoodIntakeCategory(str, Enum):
+    light = "light"  # small amount of food, typically consumed to curb hunger between meals, such as a piece of fruit, a handful of nuts, or a small yogurt.
+    moderate = "moderate"  # sufficient amount of food to satisfy hunger, usually a regular meal, such as a sandwich, a bowl of salad, or a standard portion of pasta.
+    heavy = "heavy"  # large amount of food, often consumed for special occasions or when very hungry, such as a multi-course meal with several dishes, or a buffet.
+
+    def __str__(self) -> str:
+        return self.value
+
+
 class DriverProfile(str, Enum):
     regular = "regular"
     novice = "novice"
@@ -44,6 +53,12 @@ class Person:
     def age(self) -> int:
         today = date.today()
         return today.year - self.DoB.year - ((today.month, today.day) < (self.DoB.month, self.DoB.day))
+
+
+@dataclass
+class FoodIntake:
+    time: datetime
+    category: FoodIntakeCategory
 
 
 @dataclass
